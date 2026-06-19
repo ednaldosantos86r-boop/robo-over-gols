@@ -1,11 +1,14 @@
 import subprocess
-subprocess.run(["pip", "install", "python-telegram-bot==13.15", "requests"])
+subprocess.run(["pip", "install", "python-telegram-bot==20.7", "requests", "httpx"])
 
 import logging
 import requests
 import time
 import threading
-from telegram.ext import Updater, CommandHandler
+import asyncio
+from telegram import Bot
+from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update
 
 TELEGRAM_TOKEN = "8905271121:AAG_mv76V_QVKACvDR51v_5mGK4ajECkURY"
 API_KEY = "15d971190e1b52fde7cf428428faa376"
@@ -21,10 +24,10 @@ def get_matches():
     except:
         return []
 
-def start(update, context):
-    update.message.reply_text("🤖 Robô Over Gols ativo!")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🤖 Robô Over Gols ativo!")
 
-def loop(bot):
+async def loop(bot):
     while True:
         for f in get_matches():
             try:
@@ -35,16 +38,16 @@ def loop(bot):
                 if 55 <= el <= 80 and 1 <= hg+ag <= 2 and fid not in jogos:
                     jogos.add(fid)
                     for c in CHAT_IDS:
-                        bot.send_message(c, f"⚽ SINAL: {f['teams']['home']['name']} {hg}-{ag} {f['teams']['away']['name']} ({el}')")
+                        await bot.send_message(c, f"⚽ SINAL: {f['teams']['home']['name']} {hg}-{ag} {f['teams']['away']['name']} ({el}')")
             except:
                 pass
-        time.sleep(60)
+        await asyncio.sleep(60)
 
-def main():
-    u = Updater(TELEGRAM_TOKEN, use_context=True)
-    u.dispatcher.add_handler(CommandHandler("start", start))
-    threading.Thread(target=loop, args=(u.bot,), daemon=True).start()
-    u.start_polling()
-    u.idle()
+async def main():
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    asyncio.create_task(loop(app.bot))
+    await app.run_polling()
 
-main()
+if __name__ == "__main__":
+    asyncio.run(main())
