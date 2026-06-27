@@ -1,4 +1,3 @@
-
 import telebot
 import requests
 import time
@@ -329,6 +328,51 @@ def cmd_teste(msg):
     bot.reply_to(msg, "🔍 Iniciando varredura manual...")
     threading.Thread(target=varredura, daemon=True).start()
 
+
+@bot.message_handler(commands=["aovivo"])
+def cmd_aovivo(msg):
+    bot.reply_to(msg, "🔍 Buscando jogos ao vivo...")
+    fixtures = get_live_fixtures()
+    if not fixtures:
+        bot.reply_to(msg, "❌ Nenhum jogo ao vivo encontrado na API.")
+        return
+    linhas = [f"⚽ {len(fixtures)} jogos ao vivo:\n"]
+    for f in fixtures[:15]:
+        home = f["teams"]["home"]["name"]
+        away = f["teams"]["away"]["name"]
+        minuto = f["fixture"]["status"].get("elapsed") or 0
+        status = f["fixture"]["status"]["short"]
+        gols = f"{f['goals']['home'] or 0}-{f['goals']['away'] or 0}"
+        linhas.append(f"• {home} x {away} | {minuto}' | {gols} | {status}")
+    bot.reply_to(msg, "\n".join(linhas))
+
+
+@bot.message_handler(commands=["forcasinal"])
+def cmd_forcasinal(msg):
+    mensagem = (
+        "🤖 **ROBÔ OVER GOLS** — TESTE\n\n"
+        "⚽ **Brasil x Argentina**\n"
+        "🏆 Copa do Mundo 2026\n"
+        "⏱️ 70 minutos\n"
+        "📊 Placar 0 - 0\n\n"
+        "📈 **Estatísticas (Casa - Fora)**\n"
+        "Chutes ao gol: 6 - 3\n"
+        "Chutes fora: 8 - 4\n"
+        "Escanteios: 7 - 3\n"
+        "Ataques perigosos: 45 - 22\n"
+        "Posse de bola: 62 - 38\n"
+        "Cartões vermelhos: 0 - 0\n\n"
+        "📡 Força do sinal: 88/100\n\n"
+        "🚨 **ALERTA DE ENTRADA**\n"
+        "Over limite — 🔴 ALTO\n\n"
+        "⚠️ Jogue com responsabilidade 🔞"
+    )
+    try:
+        bot.send_message(CHANNEL_ID, mensagem, parse_mode="Markdown")
+        bot.reply_to(msg, "✅ Sinal de teste enviado ao canal!")
+    except Exception as e:
+        bot.reply_to(msg, f"❌ Erro ao enviar: {e}")
+
 # ─── INICIALIZAÇÃO ────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("=" * 50)
@@ -344,4 +388,5 @@ if __name__ == "__main__":
     # Polling do bot (comandos /start, /status, /teste)
     print("[BOT] Aguardando comandos...")
     bot.infinity_polling(timeout=30, long_polling_timeout=20)
+
 
