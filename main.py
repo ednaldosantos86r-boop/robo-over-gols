@@ -5,14 +5,15 @@ import threading
 from datetime import datetime
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
-BOT_TOKEN    = "8905271121:AAG_mv76V_QVKACvDR51v_5mGK4ajECkURY"
+BOT_TOKEN    = "8687365697:AAGWA-YkMoWTDkO9dvfjiBGxydEmOWnigP0"
 API_KEY      = "bd6152b8255f5367d351055c441b518d"
-CHANNEL_ID   = "@rochaover_bot"          # ou o ID numérico do canal/grupo
+CHANNEL_ID   = "6590354226"              # seu chat pessoal
 API_BASE     = "https://v3.football.api-sports.io"
 HEADERS      = {"x-apisports-key": API_KEY}
 SCAN_INTERVAL = 60                       # segundos entre cada varredura
 
 bot = telebot.TeleBot(BOT_TOKEN)
+# @santossover_bot
 
 # ─── CONTROLE DE SINAIS JÁ ENVIADOS ──────────────────────────────────────────
 sinais_enviados: dict[int, set] = {}     # fixture_id -> set de tipos de sinal já emitidos
@@ -342,3 +343,4 @@ if __name__ == "__main__":
     # Polling do bot (comandos /start, /status, /teste)
     print("[BOT] Aguardando comandos...")
     bot.infinity_polling(timeout=30, long_polling_timeout=20)
+
