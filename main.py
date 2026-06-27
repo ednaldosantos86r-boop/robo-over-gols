@@ -1,3 +1,4 @@
+
 import telebot
 import requests
 import time
@@ -7,7 +8,7 @@ from datetime import datetime
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 BOT_TOKEN    = "8687365697:AAGWA-YkMoWTDkO9dvfjiBGxydEmOWnigP0"
 API_KEY      = "bd6152b8255f5367d351055c441b518d"
-CHANNEL_ID   = "6590354226"              # seu chat pessoal
+CHANNEL_ID   = "@santossover_bot"        # canal do Telegram
 API_BASE     = "https://v3.football.api-sports.io"
 HEADERS      = {"x-apisports-key": API_KEY}
 SCAN_INTERVAL = 60                       # segundos entre cada varredura
