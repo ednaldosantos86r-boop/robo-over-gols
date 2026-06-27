@@ -1,2 +1,2 @@
-pandas
-requests
+pyTelegramBotAPI==4.22.1
+requests==2.31.0
