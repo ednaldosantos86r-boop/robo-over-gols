@@ -61,7 +61,6 @@ def analisar_jogos():
             gols_fora = goals.get("away", 0)
             
             # ESTRATÉGIA: Jogo empatado em 0x0 entre os minutos 15 e 30
-            # Você pode alterar esses números depois se quiser mudar a estratégia!
             if tempo_jogo >= 15 and tempo_jogo <= 30 and gols_casa == 0 and gols_fora == 0:
                 # Cria o texto do sinal
                 mensagem = (
@@ -79,4 +78,5 @@ def analisar_jogos():
 
 if __name__ == "__main__":
     analisar_jogos()
+
 
