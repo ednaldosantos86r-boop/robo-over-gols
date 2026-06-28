@@ -5,98 +5,76 @@ import threading
 from datetime import datetime
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
-BOT_TOKEN    = "8687365697:AAGWA-YkMoWTDkO9dvfjiBGxydEmOWnigP0"
-API_KEY      = "15d971190e1b52fde7cf428428faa376"
-CHANNEL_ID   = "6590354226"              # chat pessoal
-API_BASE     = "https://v3.football.api-sports.io"
-HEADERS      = {"x-apisports-key": API_KEY}
-SCAN_INTERVAL = 60                       # segundos entre cada varredura
+BOT_TOKEN     = "8687365697:AAGWA-YkMoWTDkO9dvfjiBGxydEmOWnigP0"
+CHANNEL_ID    = "6590354226"
+SCAN_INTERVAL = 60
 
 bot = telebot.TeleBot(BOT_TOKEN)
-# @santossover_bot
+sinais_enviados: dict = {}
 
-# ─── CONTROLE DE SINAIS JÁ ENVIADOS ──────────────────────────────────────────
-sinais_enviados: dict[int, set] = {}     # fixture_id -> set de tipos de sinal já emitidos
+HEADERS_SOFA = {
+    "User-Agent": "Mozilla/5.0 (Android 10; Mobile) AppleWebKit/537.36",
+    "Accept": "application/json",
+    "Referer": "https://www.sofascore.com/",
+}
 
-# ─── FUNÇÕES DE API ───────────────────────────────────────────────────────────
+# ─── API SOFASCORE ────────────────────────────────────────────────────────────
 def get_live_fixtures():
-    """Retorna todas as partidas ao vivo."""
     try:
-        r = requests.get(f"{API_BASE}/fixtures", headers=HEADERS,
-                         params={"live": "all"}, timeout=15)
+        url = "https://api.sofascore.com/api/v1/sport/football/events/live"
+        r = requests.get(url, headers=HEADERS_SOFA, timeout=15)
         r.raise_for_status()
-        return r.json().get("response", [])
+        return r.json().get("events", [])
     except Exception as e:
         print(f"[ERRO] get_live_fixtures: {e}")
         return []
 
 
-def get_fixture_stats(fixture_id: int):
-    """Retorna estatísticas detalhadas de uma partida."""
+def get_fixture_stats(event_id: int):
     try:
-        r = requests.get(f"{API_BASE}/fixtures/statistics", headers=HEADERS,
-                         params={"fixture": fixture_id}, timeout=15)
+        url = f"https://api.sofascore.com/api/v1/event/{event_id}/statistics"
+        r = requests.get(url, headers=HEADERS_SOFA, timeout=15)
         r.raise_for_status()
-        return r.json().get("response", [])
+        return r.json().get("statistics", [])
     except Exception as e:
         print(f"[ERRO] get_fixture_stats: {e}")
         return []
 
-
-def get_fixture_events(fixture_id: int):
-    """Retorna eventos (gols, cartões, etc.) de uma partida."""
-    try:
-        r = requests.get(f"{API_BASE}/fixtures/events", headers=HEADERS,
-                         params={"fixture": fixture_id}, timeout=15)
-        r.raise_for_status()
-        return r.json().get("response", [])
-    except Exception as e:
-        print(f"[ERRO] get_fixture_events: {e}")
-        return []
-
 # ─── EXTRAÇÃO DE ESTATÍSTICAS ─────────────────────────────────────────────────
-def parse_stat(stats_list: list, stat_name: str, team_index: int) -> int:
-    """Extrai valor inteiro de estatística por nome e índice de time."""
-    try:
-        for s in stats_list[team_index]["statistics"]:
-            if s["type"] == stat_name:
-                v = s["value"]
-                return int(v) if v is not None else 0
-        return 0
-    except Exception:
-        return 0
+def parse_sofa_stat(stats: list, stat_key: str, period: str = "ALL") -> tuple:
+    """Extrai estatística (home, away) do Sofascore pelo key."""
+    for block in stats:
+        if block.get("period") != period:
+            continue
+        for group in block.get("groups", []):
+            for item in group.get("statisticsItems", []):
+                if item.get("key") == stat_key:
+                    h = item.get("homeValue") or item.get("home") or 0
+                    a = item.get("awayValue") or item.get("away") or 0
+                    try:
+                        return (int(str(h).replace("%","")),
+                                int(str(a).replace("%","")))
+                    except:
+                        return (0, 0)
+    return (0, 0)
 
 
 def extract_stats(stats_response: list) -> dict | None:
-    """Monta dict padronizado de estatísticas (casa e fora)."""
-    if len(stats_response) < 2:
+    if not stats_response:
         return None
-    home, away = 0, 1
+    s = stats_response
     return {
-        "shots_on":      (parse_stat(stats_response, "Shots on Goal",          home),
-                          parse_stat(stats_response, "Shots on Goal",          away)),
-        "shots_off":     (parse_stat(stats_response, "Shots off Goal",         home),
-                          parse_stat(stats_response, "Shots off Goal",         away)),
-        "corners":       (parse_stat(stats_response, "Corner Kicks",           home),
-                          parse_stat(stats_response, "Corner Kicks",           away)),
-        "dangerous":     (parse_stat(stats_response, "Dangerous Attacks",      home),
-                          parse_stat(stats_response, "Dangerous Attacks",      away)),
-        "possession":    (parse_stat(stats_response, "Ball Possession",        home),
-                          parse_stat(stats_response, "Ball Possession",        away)),
-        "yellow_cards":  (parse_stat(stats_response, "Yellow Cards",           home),
-                          parse_stat(stats_response, "Yellow Cards",           away)),
-        "red_cards":     (parse_stat(stats_response, "Red Cards",              home),
-                          parse_stat(stats_response, "Red Cards",              away)),
-        "fouls":         (parse_stat(stats_response, "Fouls",                  home),
-                          parse_stat(stats_response, "Fouls",                  away)),
+        "shots_on":   parse_sofa_stat(s, "shotsOnTarget"),
+        "shots_off":  parse_sofa_stat(s, "shotsOffTarget"),
+        "corners":    parse_sofa_stat(s, "cornerKicks"),
+        "dangerous":  parse_sofa_stat(s, "dangerousAttacks"),
+        "possession": parse_sofa_stat(s, "ballPossession"),
+        "red_cards":  parse_sofa_stat(s, "redCards"),
+        "fouls":      parse_sofa_stat(s, "fouls"),
     }
 
-# ─── LÓGICA DE PONTUAÇÃO (SCORE ENGINE) ───────────────────────────────────────
+# ─── SCORE ENGINE ─────────────────────────────────────────────────────────────
 def calcular_score(st: dict, minuto: int, total_gols: int) -> tuple[int, list[str]]:
-    """
-    Retorna (pontuação 0-100, lista de razões).
-    Pontuação >= 60 → BAIXO | >= 75 → MÉDIO | >= 88 → ALTO
-    """
     score = 0
     razoes = []
 
@@ -109,11 +87,9 @@ def calcular_score(st: dict, minuto: int, total_gols: int) -> tuple[int, list[st
     posse_home      = st["possession"][0]
     red_cards_total = st["red_cards"][0] + st["red_cards"][1]
 
-    # Penalidade por cartão vermelho (jogo desequilibrado)
     if red_cards_total > 0:
         score -= 20
 
-    # ── Chutes ao gol (pressão real)
     if shots_on_total >= 8:
         score += 22; razoes.append(f"🎯 {shots_on_total} chutes ao gol")
     elif shots_on_total >= 5:
@@ -121,7 +97,6 @@ def calcular_score(st: dict, minuto: int, total_gols: int) -> tuple[int, list[st
     elif shots_on_total >= 3:
         score += 7
 
-    # ── Chutes fora (volume de jogo)
     if shots_off_total >= 10:
         score += 12; razoes.append(f"📐 {shots_off_total} chutes fora")
     elif shots_off_total >= 6:
@@ -129,7 +104,6 @@ def calcular_score(st: dict, minuto: int, total_gols: int) -> tuple[int, list[st
     elif shots_off_total >= 3:
         score += 3
 
-    # ── Escanteios
     if corners_total >= 10:
         score += 18; razoes.append(f"🚩 {corners_total} escanteios")
     elif corners_total >= 7:
@@ -137,7 +111,6 @@ def calcular_score(st: dict, minuto: int, total_gols: int) -> tuple[int, list[st
     elif corners_total >= 4:
         score += 6
 
-    # ── Ataques perigosos totais
     if danger_total >= 60:
         score += 20; razoes.append(f"⚡ {danger_total} ataques perigosos")
     elif danger_total >= 40:
@@ -145,7 +118,6 @@ def calcular_score(st: dict, minuto: int, total_gols: int) -> tuple[int, list[st
     elif danger_total >= 25:
         score += 8
 
-    # ── Desequilíbrio ofensivo (um time muito mais ativo)
     if danger_home > 0 and danger_away > 0:
         ratio = max(danger_home, danger_away) / min(danger_home, danger_away)
         if ratio >= 3.0:
@@ -153,11 +125,9 @@ def calcular_score(st: dict, minuto: int, total_gols: int) -> tuple[int, list[st
         elif ratio >= 2.0:
             score += 5
 
-    # ── Posse alta (time dominando)
     if posse_home >= 65 or (100 - posse_home) >= 65:
         score += 8; razoes.append(f"⚽ Posse dominante {max(posse_home, 100-posse_home)}%")
 
-    # ── Janela de minuto (peso por fase)
     if 55 <= minuto <= 70:
         score += 10; razoes.append(f"⏱️ Janela crítica ({minuto}')")
     elif 70 < minuto <= 80:
@@ -165,7 +135,6 @@ def calcular_score(st: dict, minuto: int, total_gols: int) -> tuple[int, list[st
     elif 80 < minuto <= 89:
         score += 8
 
-    # ── Jogo sem gols = maior pressão esperada
     if total_gols == 0:
         score += 10; razoes.append("🔒 Jogo sem gols – pressão crescente")
     elif total_gols == 1:
@@ -175,53 +144,42 @@ def calcular_score(st: dict, minuto: int, total_gols: int) -> tuple[int, list[st
 
 
 def classificar_sinal(score: int) -> str | None:
-    if score >= 88:
-        return "🔴 ALTO"
-    if score >= 75:
-        return "🟡 MÉDIO"
-    if score >= 60:
-        return "🟢 BAIXO"
+    if score >= 88: return "🔴 ALTO"
+    if score >= 75: return "🟡 MÉDIO"
+    if score >= 60: return "🟢 BAIXO"
     return None
 
-# ─── TIPO DE SINAL ÚNICO POR PARTIDA ─────────────────────────────────────────
+
 def tipo_sinal(score: int) -> str:
     if score >= 88: return "ALTO"
     if score >= 75: return "MEDIO"
     return "BAIXO"
 
-# ─── FORMATAÇÃO DA MENSAGEM (estilo Robozão) ──────────────────────────────────
-def montar_mensagem(fixture: dict, st: dict, minuto: int,
-                    total_gols: int, gols_str: str,
-                    classificacao: str, razoes: list[str],
-                    league_name: str, score: int) -> str:
-
-    home = fixture["teams"]["home"]["name"]
-    away = fixture["teams"]["away"]["name"]
-
+# ─── FORMATAÇÃO ───────────────────────────────────────────────────────────────
+def montar_mensagem(home, away, league, minuto, gols_str,
+                    st, classificacao, razoes, score) -> str:
     linhas_razoes = "\n".join(f"  {r}" for r in razoes) if razoes else "  📊 Estatísticas favoráveis"
-
-    msg = (
-        f"🤖 **ROBÔ OVER GOLS**\n\n"
-        f"⚽ **{home} x {away}**\n"
-        f"🏆 {league_name}\n"
+    return (
+        f"🤖 *ROBÔ OVER GOLS*\n\n"
+        f"⚽ *{home} x {away}*\n"
+        f"🏆 {league}\n"
         f"⏱️ {minuto} minutos\n"
         f"📊 Placar {gols_str}\n\n"
-        f"📈 **Estatísticas (Casa - Fora)**\n"
+        f"📈 *Estatísticas (Casa - Fora)*\n"
         f"Chutes ao gol: {st['shots_on'][0]} - {st['shots_on'][1]}\n"
         f"Chutes fora: {st['shots_off'][0]} - {st['shots_off'][1]}\n"
         f"Escanteios: {st['corners'][0]} - {st['corners'][1]}\n"
         f"Ataques perigosos: {st['dangerous'][0]} - {st['dangerous'][1]}\n"
         f"Posse de bola: {st['possession'][0]} - {st['possession'][1]}\n"
         f"Cartões vermelhos: {st['red_cards'][0]} - {st['red_cards'][1]}\n\n"
-        f"🎯 **Razões do sinal:**\n{linhas_razoes}\n\n"
+        f"🎯 *Razões do sinal:*\n{linhas_razoes}\n\n"
         f"📡 Força do sinal: {score}/100\n\n"
-        f"🚨 **ALERTA DE ENTRADA**\n"
+        f"🚨 *ALERTA DE ENTRADA*\n"
         f"Over limite — {classificacao}\n\n"
         f"⚠️ Jogue com responsabilidade 🔞"
     )
-    return msg
 
-# ─── ENVIO PARA O CANAL ───────────────────────────────────────────────────────
+# ─── ENVIO ────────────────────────────────────────────────────────────────────
 def enviar_sinal(mensagem: str):
     try:
         bot.send_message(CHANNEL_ID, mensagem, parse_mode="Markdown")
@@ -229,67 +187,65 @@ def enviar_sinal(mensagem: str):
     except Exception as e:
         print(f"[ERRO] enviar_sinal: {e}")
 
-# ─── LOOP PRINCIPAL ───────────────────────────────────────────────────────────
+# ─── VARREDURA ────────────────────────────────────────────────────────────────
 def varredura():
-    print(f"[SCAN] {datetime.now().strftime('%H:%M:%S')} — varrendo partidas ao vivo...")
-    fixtures = get_live_fixtures()
-    print(f"[INFO] {len(fixtures)} partidas ao vivo encontradas")
+    print(f"[SCAN] {datetime.now().strftime('%H:%M:%S')} — varrendo...")
+    eventos = get_live_fixtures()
+    print(f"[INFO] {len(eventos)} jogos ao vivo")
 
-    for fix in fixtures:
+    for ev in eventos:
         try:
-            fixture_id = fix["fixture"]["id"]
-            minuto     = fix["fixture"]["status"].get("elapsed") or 0
-            status     = fix["fixture"]["status"]["short"]
-            home_gols  = fix["goals"]["home"] or 0
-            away_gols  = fix["goals"]["away"] or 0
-            total_gols = home_gols + away_gols
-            gols_str   = f"{home_gols} - {away_gols}"
-            league_name = fix["league"]["name"]
-            season     = fix["league"].get("season", "")
+            event_id   = ev["id"]
+            status     = ev.get("status", {})
+            minuto     = status.get("clock", {}).get("initial", 0) or 0
+            status_code = status.get("type", {}).get("state", "")
+            home_score = ev.get("homeScore", {}).get("current", 0) or 0
+            away_score = ev.get("awayScore", {}).get("current", 0) or 0
+            total_gols = home_score + away_score
+            gols_str   = f"{home_score} - {away_score}"
+            home       = ev["homeTeam"]["name"]
+            away       = ev["awayTeam"]["name"]
+            league     = ev.get("tournament", {}).get("name", "Desconhecido")
 
-            # ── Filtros base ──────────────────────────────────────────────────
-            # Apenas 2ª metade (55-89') e jogos com 0-2 gols
-            if status not in ("2H", "LIVE", "ET"):
+            # Filtros
+            if status_code not in ("inprogress",):
                 continue
             if not (55 <= minuto <= 89):
                 continue
             if total_gols > 2:
                 continue
 
-            # ── Buscar estatísticas ───────────────────────────────────────────
-            stats_resp = get_fixture_stats(fixture_id)
+            # Estatísticas
+            stats_resp = get_fixture_stats(event_id)
             st = extract_stats(stats_resp)
             if st is None:
                 continue
 
-            # ── Calcular score ────────────────────────────────────────────────
+            # Score
             score, razoes = calcular_score(st, minuto, total_gols)
             classificacao = classificar_sinal(score)
             if classificacao is None:
                 continue
 
-            # ── Evitar sinal duplicado (mesmo tipo para mesma partida) ────────
+            # Dedup
             tipo = tipo_sinal(score)
-            if fixture_id not in sinais_enviados:
-                sinais_enviados[fixture_id] = set()
-            if tipo in sinais_enviados[fixture_id]:
+            if event_id not in sinais_enviados:
+                sinais_enviados[event_id] = set()
+            if tipo in sinais_enviados[event_id]:
                 continue
-            sinais_enviados[fixture_id].add(tipo)
+            sinais_enviados[event_id].add(tipo)
 
-            # ── Montar e enviar ───────────────────────────────────────────────
-            mensagem = montar_mensagem(fix, st, minuto, total_gols,
-                                       gols_str, classificacao,
-                                       razoes, league_name, score)
-            print(f"[SINAL {tipo}] {fix['teams']['home']['name']} x {fix['teams']['away']['name']}"
-                  f" | {minuto}' | score={score}")
+            mensagem = montar_mensagem(home, away, league, minuto,
+                                       gols_str, st, classificacao, razoes, score)
+            print(f"[SINAL {tipo}] {home} x {away} | {minuto}' | score={score}")
             enviar_sinal(mensagem)
-            time.sleep(2)   # evitar flood
+            time.sleep(2)
 
         except Exception as e:
-            print(f"[ERRO] fixture loop: {e}")
+            print(f"[ERRO] evento: {e}")
 
-    # Limpar partidas antigas do controle (fixtures que saíram do ao vivo)
-    ids_vivos = {f["fixture"]["id"] for f in fixtures}
+    # Limpa eventos antigos
+    ids_vivos = {e["id"] for e in eventos}
     for fid in list(sinais_enviados.keys()):
         if fid not in ids_vivos:
             del sinais_enviados[fid]
@@ -303,24 +259,19 @@ def loop_continuo():
             print(f"[ERRO GERAL] {e}")
         time.sleep(SCAN_INTERVAL)
 
-# ─── COMANDOS DO BOT ──────────────────────────────────────────────────────────
+# ─── COMANDOS ─────────────────────────────────────────────────────────────────
 @bot.message_handler(commands=["start"])
 def cmd_start(msg):
     bot.reply_to(msg,
-        "🤖 *Robô Over Gols* ativo!\n\n"
-        "Varredura automática a cada 60 segundos.\n"
-        "Sinais enviados direto no canal quando detectamos pressão alta.\n\n"
-        "Use /status para ver o estado atual.",
+        "🤖 *Robô Over Gols* ativo!\n\nVarredura automática a cada 60s.\nUse /status ou /aovivo.",
         parse_mode="Markdown")
 
 
 @bot.message_handler(commands=["status"])
 def cmd_status(msg):
     bot.reply_to(msg,
-        f"✅ Bot rodando\n"
-        f"🕐 {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
-        f"📡 Partidas monitoradas: {len(sinais_enviados)}",
-        parse_mode="Markdown")
+        f"✅ Bot rodando\n🕐 {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+        f"📡 Partidas monitoradas: {len(sinais_enviados)}")
 
 
 @bot.message_handler(commands=["teste"])
@@ -332,62 +283,49 @@ def cmd_teste(msg):
 @bot.message_handler(commands=["aovivo"])
 def cmd_aovivo(msg):
     bot.reply_to(msg, "🔍 Buscando jogos ao vivo...")
-    fixtures = get_live_fixtures()
-    if not fixtures:
-        bot.reply_to(msg, "❌ Nenhum jogo ao vivo encontrado na API.")
+    eventos = get_live_fixtures()
+    if not eventos:
+        bot.reply_to(msg, "❌ Nenhum jogo ao vivo encontrado.")
         return
-    linhas = [f"⚽ {len(fixtures)} jogos ao vivo:\n"]
-    for f in fixtures[:15]:
-        home = f["teams"]["home"]["name"]
-        away = f["teams"]["away"]["name"]
-        minuto = f["fixture"]["status"].get("elapsed") or 0
-        status = f["fixture"]["status"]["short"]
-        gols = f"{f['goals']['home'] or 0}-{f['goals']['away'] or 0}"
-        linhas.append(f"• {home} x {away} | {minuto}' | {gols} | {status}")
+    linhas = [f"⚽ {len(eventos)} jogos ao vivo:\n"]
+    for ev in eventos[:15]:
+        home  = ev["homeTeam"]["name"]
+        away  = ev["awayTeam"]["name"]
+        min_  = ev.get("status", {}).get("clock", {}).get("initial", 0) or 0
+        hs    = ev.get("homeScore", {}).get("current", 0) or 0
+        as_   = ev.get("awayScore", {}).get("current", 0) or 0
+        linhas.append(f"• {home} x {away} | {min_}' | {hs}-{as_}")
     bot.reply_to(msg, "\n".join(linhas))
 
 
 @bot.message_handler(commands=["forcasinal"])
 def cmd_forcasinal(msg):
     mensagem = (
-        "🤖 **ROBÔ OVER GOLS** — TESTE\n\n"
-        "⚽ **Brasil x Argentina**\n"
+        "🤖 *ROBÔ OVER GOLS* — TESTE\n\n"
+        "⚽ *Brasil x Argentina*\n"
         "🏆 Copa do Mundo 2026\n"
         "⏱️ 70 minutos\n"
         "📊 Placar 0 - 0\n\n"
-        "📈 **Estatísticas (Casa - Fora)**\n"
-        "Chutes ao gol: 6 - 3\n"
-        "Chutes fora: 8 - 4\n"
-        "Escanteios: 7 - 3\n"
-        "Ataques perigosos: 45 - 22\n"
-        "Posse de bola: 62 - 38\n"
-        "Cartões vermelhos: 0 - 0\n\n"
         "📡 Força do sinal: 88/100\n\n"
-        "🚨 **ALERTA DE ENTRADA**\n"
+        "🚨 *ALERTA DE ENTRADA*\n"
         "Over limite — 🔴 ALTO\n\n"
         "⚠️ Jogue com responsabilidade 🔞"
     )
     try:
         bot.send_message(CHANNEL_ID, mensagem, parse_mode="Markdown")
-        bot.reply_to(msg, "✅ Sinal de teste enviado ao canal!")
+        bot.reply_to(msg, "✅ Sinal de teste enviado!")
     except Exception as e:
-        bot.reply_to(msg, f"❌ Erro ao enviar: {e}")
+        bot.reply_to(msg, f"❌ Erro: {e}")
 
-# ─── INICIALIZAÇÃO ────────────────────────────────────────────────────────────
+# ─── MAIN ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("=" * 50)
-    print("  🤖 ROBÔ OVER GOLS — iniciando")
-    print(f"  Canal: {CHANNEL_ID}")
-    print(f"  Intervalo de scan: {SCAN_INTERVAL}s")
+    print("  🤖 ROBÔ OVER GOLS — Sofascore")
+    print(f"  Chat: {CHANNEL_ID}")
     print("=" * 50)
-
-    # Thread do loop de varredura
-    t = threading.Thread(target=loop_continuo, daemon=True)
-    t.start()
-
-    # Polling do bot (comandos /start, /status, /teste)
-    print("[BOT] Aguardando comandos...")
+    threading.Thread(target=loop_continuo, daemon=True).start()
     bot.infinity_polling(timeout=30, long_polling_timeout=20)
+
 
 
 
