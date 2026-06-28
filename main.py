@@ -8,7 +8,7 @@ from telebot import apihelper
 BOT_TOKEN      = os.environ.get("BOT_TOKEN", "")
 API_KEY        = os.environ.get("API_FOOTBALL_KEY", "")
 CHAT_ID        = os.environ.get("CHAT_ID", "6590354226")
-SCAN_INTERVAL  = 60   # segundos entre cada varredura
+SCAN_INTERVAL  = 300  # segundos entre cada varredura (5 min = ~288 req/dia)
 MIN_MINUTE     = 55
 MAX_MINUTE     = 89
 MAX_GOALS      = 2
@@ -27,6 +27,16 @@ def get_live_matches():
     try:
         resp = requests.get(url, headers=headers, timeout=20)
         data = resp.json()
+
+        # Diagnóstico: detecta erros da API
+        errors = data.get("errors", {})
+        if errors:
+            print(f"[ERRO API] {errors}")
+            return []
+
+        remaining = resp.headers.get("x-ratelimit-requests-remaining", "?")
+        print(f"[API] Requisições restantes hoje: {remaining}")
+
         return data.get("response", [])
     except Exception as e:
         print(f"[ERRO] get_live_matches: {e}")
@@ -135,8 +145,10 @@ def enviar_sinal(fixture, score):
 def varrer():
     matches = get_live_matches()
     hora    = time.strftime("%H:%M")
-    print(f"[SCAN] {hora} — {len(matches)} jogo(s) ao vivo")
+    total_vivo = len(matches)
+    print(f"[SCAN] {hora} — {total_vivo} jogo(s) ao vivo")
 
+    candidatos = 0
     for fixture in matches:
         fid    = fixture["fixture"]["id"]
         minuto = fixture["fixture"]["status"].get("elapsed", 0) or 0
@@ -148,6 +160,7 @@ def varrer():
             continue
         if total > MAX_GOALS:
             continue
+        candidatos += 1
         if fid in sinais_enviados:
             continue
 
@@ -156,6 +169,11 @@ def varrer():
         if score >= 45:   # envia apenas MÉDIO ou ALTO
             enviar_sinal(fixture, score)
             sinais_enviados.add(fid)
+
+    if total_vivo == 0:
+        print(f"[INFO] Nenhum jogo ao vivo no momento (API retornou 0)")
+    elif candidatos == 0:
+        print(f"[INFO] {total_vivo} jogos ao vivo mas nenhum no filtro {MIN_MINUTE}-{MAX_MINUTE}' com <= {MAX_GOALS} gols")
 
 # ── Loop principal com reconexão automática ────────────────
 def main():
@@ -169,6 +187,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
