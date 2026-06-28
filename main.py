@@ -6,7 +6,7 @@ from datetime import datetime
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 BOT_TOKEN    = "8687365697:AAGWA-YkMoWTDkO9dvfjiBGxydEmOWnigP0"
-API_KEY      = "bd6152b8255f5367d351055c441b518d"
+API_KEY      = "15d971190e1b52fde7cf428428faa376"
 CHANNEL_ID   = "6590354226"              # chat pessoal
 API_BASE     = "https://v3.football.api-sports.io"
 HEADERS      = {"x-apisports-key": API_KEY}
@@ -388,6 +388,7 @@ if __name__ == "__main__":
     # Polling do bot (comandos /start, /status, /teste)
     print("[BOT] Aguardando comandos...")
     bot.infinity_polling(timeout=30, long_polling_timeout=20)
+
 
 
 
