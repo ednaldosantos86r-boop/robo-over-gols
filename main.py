@@ -23,8 +23,8 @@ API_BASE = f"https://{RAPID_HOST}"
 # ─── API ──────────────────────────────────────────────────────────────────────
 def get_live_fixtures():
     try:
-        r = requests.get(f"{API_BASE}/futebol-atual-ao-vivo",
-                         headers=HEADERS, timeout=15)
+        url = "https://free-api-live-football-data.p.rapidapi.com/football-current-live"
+        r = requests.get(url, headers=HEADERS, timeout=15)
         r.raise_for_status()
         data = r.json()
         return data.get("response", data.get("data", data.get("matches", [])))
@@ -351,6 +351,7 @@ if __name__ == "__main__":
     print("🤖 ROBÔ OVER GOLS — RapidAPI")
     threading.Thread(target=loop_continuo, daemon=True).start()
     bot.infinity_polling(timeout=30, long_polling_timeout=20)
+
 
 
 
