@@ -1,4 +1,3 @@
-
 import telebot
 import requests
 import time
@@ -16,16 +15,15 @@ sinais_enviados: dict = {}
 RAPID_KEY  = "c5dc120af4mshc53e95e29360e7bp110eccjsn521bdeca1caa"
 HEADERS    = {
     "x-rapidapi-key":  RAPID_KEY,
-    "x-rapidapi-host": "api-football-v1.p.rapidapi.com",
+    "x-rapidapi-host": "free-api-live-football-data.p.rapidapi.com",
 }
-API_BASE = "https://api-football-v1.p.rapidapi.com/v3"
+API_BASE = "https://free-api-live-football-data.p.rapidapi.com"
 
 # ─── API ──────────────────────────────────────────────────────────────────────
 def get_live_fixtures():
     try:
-        r = requests.get(f"{API_BASE}/fixtures",
+        r = requests.get(f"{API_BASE}/football-current-live",
                          headers=HEADERS,
-                         params={"live": "all"},
                          timeout=15)
         r.raise_for_status()
         return r.json().get("response", [])
@@ -36,9 +34,9 @@ def get_live_fixtures():
 
 def get_fixture_stats(fixture_id):
     try:
-        r = requests.get(f"{API_BASE}/fixtures/statistics",
+        r = requests.get(f"{API_BASE}/football-get-match-live-stats",
                          headers=HEADERS,
-                         params={"fixture": fixture_id},
+                         params={"match_id": fixture_id},
                          timeout=15)
         r.raise_for_status()
         return r.json().get("response", [])
@@ -283,7 +281,26 @@ def cmd_aovivo(msg):
         linhas.append(f"• {home} x {away} | {min_}' | {hs}-{as_}")
     bot.reply_to(msg, "\n".join(linhas))
 
-@bot.message_handler(commands=["forcasinal"])
+@bot.message_handler(commands=["debug"])
+def cmd_debug(msg):
+    bot.reply_to(msg, "🔍 Testando endpoints...")
+    endpoints = [
+        "/football-current-live",
+        "/football-get-all-live-matches-scores",
+        "/futebol-atual-ao-vivo",
+        "/football-live",
+        "/livescores",
+        "/matches/live",
+    ]
+    resultados = []
+    for ep in endpoints:
+        try:
+            url = f"https://free-api-live-football-data.p.rapidapi.com{ep}"
+            r = requests.get(url, headers=HEADERS, timeout=10)
+            resultados.append(f"✅ {ep} → {r.status_code}")
+        except Exception as e:
+            resultados.append(f"❌ {ep} → erro")
+    bot.reply_to(msg, "\n".join(resultados))
 def cmd_forcasinal(msg):
     mensagem = (
         "🤖 *ROBÔ OVER GOLS* — TESTE\n\n"
@@ -304,6 +321,7 @@ if __name__ == "__main__":
     print("🤖 ROBÔ OVER GOLS — API-Football via RapidAPI")
     threading.Thread(target=loop_continuo, daemon=True).start()
     bot.infinity_polling(timeout=30, long_polling_timeout=20)
+
 
 
 
