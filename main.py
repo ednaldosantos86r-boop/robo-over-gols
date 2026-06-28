@@ -1,3 +1,4 @@
+
 import telebot
 import requests
 import time
@@ -13,37 +14,36 @@ bot = telebot.TeleBot(BOT_TOKEN)
 sinais_enviados: dict = {}
 
 RAPID_KEY  = "c5dc120af4mshc53e95e29360e7bp110eccjsn521bdeca1caa"
-RAPID_HOST = "free-api-live-football-data.p.rapidapi.com"
 HEADERS    = {
     "x-rapidapi-key":  RAPID_KEY,
-    "x-rapidapi-host": RAPID_HOST,
+    "x-rapidapi-host": "api-football-v1.p.rapidapi.com",
 }
-API_BASE = f"https://{RAPID_HOST}"
+API_BASE = "https://api-football-v1.p.rapidapi.com/v3"
 
 # ─── API ──────────────────────────────────────────────────────────────────────
 def get_live_fixtures():
     try:
-        url = "https://free-api-live-football-data.p.rapidapi.com/football-current-live"
-        r = requests.get(url, headers=HEADERS, timeout=15)
+        r = requests.get(f"{API_BASE}/fixtures",
+                         headers=HEADERS,
+                         params={"live": "all"},
+                         timeout=15)
         r.raise_for_status()
-        data = r.json()
-        return data.get("response", data.get("data", data.get("matches", [])))
+        return r.json().get("response", [])
     except Exception as e:
         print(f"[ERRO] get_live_fixtures: {e}")
         return []
 
 
-def get_fixture_stats(match_id):
+def get_fixture_stats(fixture_id):
     try:
-        r = requests.get(f"{API_BASE}/football-get-match-statistics",
+        r = requests.get(f"{API_BASE}/fixtures/statistics",
                          headers=HEADERS,
-                         params={"match_id": match_id},
+                         params={"fixture": fixture_id},
                          timeout=15)
         r.raise_for_status()
-        data = r.json()
-        return data.get("response", data.get("data", data.get("statistics", [])))
+        return r.json().get("response", [])
     except Exception as e:
-        print(f"[ERRO] get_fixture_stats: {e}")
+        print(f"[ERRO] get_stats: {e}")
         return []
 
 # ─── EXTRAÇÃO DE STATS ────────────────────────────────────────────────────────
@@ -54,50 +54,30 @@ def safe_int(val) -> int:
         return 0
 
 
-def extract_stats(stats) -> dict | None:
-    """Tenta extrair stats de vários formatos possíveis da API."""
-    if not stats:
+def parse_stat(stats_list, stat_name, team_index):
+    try:
+        for s in stats_list[team_index]["statistics"]:
+            if s["type"] == stat_name:
+                return safe_int(s["value"] or 0)
+        return 0
+    except:
+        return 0
+
+
+def extract_stats(stats_response):
+    if len(stats_response) < 2:
         return None
-
-    # Formato lista de times [{team, statistics:[]}]
-    if isinstance(stats, list) and len(stats) >= 2:
-        def get_val(team_stats, key):
-            for s in team_stats:
-                if s.get("type", "").lower().replace(" ", "") == key.lower().replace(" ", ""):
-                    return safe_int(s.get("value", 0))
-            return 0
-
-        h_stats = stats[0].get("statistics", [])
-        a_stats = stats[1].get("statistics", [])
-
-        return {
-            "shots_on":   (get_val(h_stats, "ShotsonGoal"),   get_val(a_stats, "ShotsonGoal")),
-            "shots_off":  (get_val(h_stats, "ShotsoffGoal"),  get_val(a_stats, "ShotsoffGoal")),
-            "corners":    (get_val(h_stats, "CornerKicks"),    get_val(a_stats, "CornerKicks")),
-            "dangerous":  (get_val(h_stats, "DangerousAttacks"), get_val(a_stats, "DangerousAttacks")),
-            "possession": (get_val(h_stats, "BallPossession"), get_val(a_stats, "BallPossession")),
-            "red_cards":  (get_val(h_stats, "RedCards"),       get_val(a_stats, "RedCards")),
-        }
-
-    # Formato dict com home/away direto
-    if isinstance(stats, dict):
-        def gv(d, k):
-            return safe_int(d.get(k, 0))
-        h = stats.get("home", stats.get("homeTeam", {}))
-        a = stats.get("away", stats.get("awayTeam", {}))
-        return {
-            "shots_on":   (gv(h, "shotsOnTarget"),   gv(a, "shotsOnTarget")),
-            "shots_off":  (gv(h, "shotsOffTarget"),  gv(a, "shotsOffTarget")),
-            "corners":    (gv(h, "corners"),          gv(a, "corners")),
-            "dangerous":  (gv(h, "dangerousAttacks"), gv(a, "dangerousAttacks")),
-            "possession": (gv(h, "possession"),       gv(a, "possession")),
-            "red_cards":  (gv(h, "redCards"),         gv(a, "redCards")),
-        }
-
-    return None
+    return {
+        "shots_on":   (parse_stat(stats_response, "Shots on Goal", 0),   parse_stat(stats_response, "Shots on Goal", 1)),
+        "shots_off":  (parse_stat(stats_response, "Shots off Goal", 0),  parse_stat(stats_response, "Shots off Goal", 1)),
+        "corners":    (parse_stat(stats_response, "Corner Kicks", 0),     parse_stat(stats_response, "Corner Kicks", 1)),
+        "dangerous":  (parse_stat(stats_response, "Dangerous Attacks", 0),parse_stat(stats_response, "Dangerous Attacks", 1)),
+        "possession": (parse_stat(stats_response, "Ball Possession", 0),  parse_stat(stats_response, "Ball Possession", 1)),
+        "red_cards":  (parse_stat(stats_response, "Red Cards", 0),        parse_stat(stats_response, "Red Cards", 1)),
+    }
 
 # ─── SCORE ENGINE ─────────────────────────────────────────────────────────────
-def calcular_score(st: dict, minuto: int, total_gols: int):
+def calcular_score(st, minuto, total_gols):
     score = 0
     razoes = []
 
@@ -110,8 +90,7 @@ def calcular_score(st: dict, minuto: int, total_gols: int):
     posse_home      = st["possession"][0]
     red_total       = st["red_cards"][0] + st["red_cards"][1]
 
-    if red_total > 0:
-        score -= 20
+    if red_total > 0: score -= 20
 
     if shots_on_total >= 8:
         score += 22; razoes.append(f"🎯 {shots_on_total} chutes ao gol")
@@ -172,7 +151,6 @@ def classificar_sinal(score):
     if score >= 60: return "🟢 BAIXO"
     return None
 
-
 def tipo_sinal(score):
     if score >= 88: return "ALTO"
     if score >= 75: return "MEDIO"
@@ -201,7 +179,6 @@ def montar_mensagem(home, away, league, minuto, gols_str, st, classificacao, raz
         f"⚠️ Jogue com responsabilidade 🔞"
     )
 
-# ─── ENVIO ────────────────────────────────────────────────────────────────────
 def enviar_sinal(msg):
     try:
         bot.send_message(CHANNEL_ID, msg, parse_mode="Markdown")
@@ -210,65 +187,47 @@ def enviar_sinal(msg):
         print(f"[ERRO enviar] {e}")
 
 # ─── VARREDURA ────────────────────────────────────────────────────────────────
-def extrair_campo(ev, *keys):
-    """Tenta extrair campo de dict com múltiplas chaves possíveis."""
-    for k in keys:
-        if k in ev and ev[k] is not None:
-            return ev[k]
-    return None
-
-
 def varredura():
     print(f"[SCAN] {datetime.now().strftime('%H:%M:%S')}")
-    eventos = get_live_fixtures()
-    print(f"[INFO] {len(eventos)} jogos")
+    fixtures = get_live_fixtures()
+    print(f"[INFO] {len(fixtures)} jogos ao vivo")
 
-    for ev in eventos:
+    for fix in fixtures:
         try:
-            # Extrai campos com fallback
-            event_id   = extrair_campo(ev, "id", "match_id", "fixture_id")
-            home       = extrair_campo(ev, "home_name", "homeTeam", "home_team", "home")
-            away       = extrair_campo(ev, "away_name", "awayTeam", "away_team", "away")
-            minuto     = safe_int(extrair_campo(ev, "minute", "elapsed", "match_elapsed") or 0)
-            home_score = safe_int(extrair_campo(ev, "home_score", "homeGoals", "score_home") or 0)
-            away_score = safe_int(extrair_campo(ev, "away_score", "awayGoals", "score_away") or 0)
-            league     = extrair_campo(ev, "league_name", "competition", "tournament", "league") or "?"
-            status     = str(extrair_campo(ev, "status", "match_status") or "").lower()
+            fixture_id = fix["fixture"]["id"]
+            minuto     = fix["fixture"]["status"].get("elapsed") or 0
+            status     = fix["fixture"]["status"]["short"]
+            home_gols  = fix["goals"]["home"] or 0
+            away_gols  = fix["goals"]["away"] or 0
+            total_gols = home_gols + away_gols
+            gols_str   = f"{home_gols} - {away_gols}"
+            home       = fix["teams"]["home"]["name"]
+            away       = fix["teams"]["away"]["name"]
+            league     = fix["league"]["name"]
 
-            if isinstance(home, dict): home = home.get("name", "?")
-            if isinstance(away, dict): away = away.get("name", "?")
-            if isinstance(league, dict): league = league.get("name", "?")
-
-            total_gols = home_score + away_score
-            gols_str   = f"{home_score} - {away_score}"
-
-            # Filtros
-            if "half" not in status and "live" not in status and "progress" not in status and "2h" not in status:
+            if status not in ("2H", "LIVE", "ET"):
                 continue
             if not (55 <= minuto <= 89):
                 continue
             if total_gols > 2:
                 continue
 
-            # Stats
-            stats_raw = get_fixture_stats(event_id)
-            st = extract_stats(stats_raw)
+            stats_resp = get_fixture_stats(fixture_id)
+            st = extract_stats(stats_resp)
             if st is None:
                 continue
 
-            # Score
             score, razoes = calcular_score(st, minuto, total_gols)
             classificacao = classificar_sinal(score)
             if classificacao is None:
                 continue
 
-            # Dedup
             tipo = tipo_sinal(score)
-            if event_id not in sinais_enviados:
-                sinais_enviados[event_id] = set()
-            if tipo in sinais_enviados[event_id]:
+            if fixture_id not in sinais_enviados:
+                sinais_enviados[fixture_id] = set()
+            if tipo in sinais_enviados[fixture_id]:
                 continue
-            sinais_enviados[event_id].add(tipo)
+            sinais_enviados[fixture_id].add(tipo)
 
             msg = montar_mensagem(home, away, league, minuto, gols_str,
                                   st, classificacao, razoes, score)
@@ -277,9 +236,9 @@ def varredura():
             time.sleep(2)
 
         except Exception as e:
-            print(f"[ERRO ev] {e}")
+            print(f"[ERRO fix] {e}")
 
-    ids = {extrair_campo(e, "id", "match_id", "fixture_id") for e in eventos}
+    ids = {f["fixture"]["id"] for f in fixtures}
     for fid in list(sinais_enviados.keys()):
         if fid not in ids:
             del sinais_enviados[fid]
@@ -298,37 +257,31 @@ def loop_continuo():
 def cmd_start(msg):
     bot.reply_to(msg, "🤖 *Robô Over Gols* ativo!\nUse /aovivo ou /status.", parse_mode="Markdown")
 
-
 @bot.message_handler(commands=["status"])
 def cmd_status(msg):
     bot.reply_to(msg, f"✅ Rodando\n🕐 {datetime.now().strftime('%d/%m %H:%M')}\n📡 {len(sinais_enviados)} partidas")
-
 
 @bot.message_handler(commands=["teste"])
 def cmd_teste(msg):
     bot.reply_to(msg, "🔍 Iniciando varredura manual...")
     threading.Thread(target=varredura, daemon=True).start()
 
-
 @bot.message_handler(commands=["aovivo"])
 def cmd_aovivo(msg):
     bot.reply_to(msg, "🔍 Buscando jogos ao vivo...")
-    eventos = get_live_fixtures()
-    if not eventos:
+    fixtures = get_live_fixtures()
+    if not fixtures:
         bot.reply_to(msg, "❌ Nenhum jogo encontrado.")
         return
-    linhas = [f"⚽ {len(eventos)} jogos:\n"]
-    for ev in eventos[:15]:
-        home = extrair_campo(ev, "home_name", "homeTeam", "home_team", "home") or "?"
-        away = extrair_campo(ev, "away_name", "awayTeam", "away_team", "away") or "?"
-        if isinstance(home, dict): home = home.get("name", "?")
-        if isinstance(away, dict): away = away.get("name", "?")
-        min_ = safe_int(extrair_campo(ev, "minute", "elapsed") or 0)
-        hs   = safe_int(extrair_campo(ev, "home_score", "homeGoals") or 0)
-        as_  = safe_int(extrair_campo(ev, "away_score", "awayGoals") or 0)
+    linhas = [f"⚽ {len(fixtures)} jogos:\n"]
+    for f in fixtures[:15]:
+        home  = f["teams"]["home"]["name"]
+        away  = f["teams"]["away"]["name"]
+        min_  = f["fixture"]["status"].get("elapsed") or 0
+        hs    = f["goals"]["home"] or 0
+        as_   = f["goals"]["away"] or 0
         linhas.append(f"• {home} x {away} | {min_}' | {hs}-{as_}")
     bot.reply_to(msg, "\n".join(linhas))
-
 
 @bot.message_handler(commands=["forcasinal"])
 def cmd_forcasinal(msg):
@@ -348,7 +301,7 @@ def cmd_forcasinal(msg):
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🤖 ROBÔ OVER GOLS — RapidAPI")
+    print("🤖 ROBÔ OVER GOLS — API-Football via RapidAPI")
     threading.Thread(target=loop_continuo, daemon=True).start()
     bot.infinity_polling(timeout=30, long_polling_timeout=20)
 
