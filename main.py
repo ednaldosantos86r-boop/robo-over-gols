@@ -7,7 +7,7 @@ from datetime import datetime
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 BOT_TOKEN     = "8687365697:AAGWA-YkMoWTDkO9dvfjiBGxydEmOWnigP0"
 CHANNEL_ID    = "6590354226"
-SCAN_INTERVAL = 60
+SCAN_INTERVAL = 300
 
 bot = telebot.TeleBot(BOT_TOKEN)
 sinais_enviados: dict = {}
@@ -321,6 +321,7 @@ if __name__ == "__main__":
     print("🤖 ROBÔ OVER GOLS — API-Football via RapidAPI")
     threading.Thread(target=loop_continuo, daemon=True).start()
     bot.infinity_polling(timeout=30, long_polling_timeout=20)
+
 
 
 
