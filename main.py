@@ -285,19 +285,21 @@ def cmd_aovivo(msg):
 def cmd_debug(msg):
     bot.reply_to(msg, "🔍 Testando endpoints...")
     endpoints = [
-        "/football-current-live",
         "/football-get-all-live-matches-scores",
-        "/futebol-atual-ao-vivo",
-        "/football-live",
-        "/livescores",
-        "/matches/live",
+        "/football-live-matches",
+        "/football-live-scores",
+        "/football-matches-live",
+        "/live-scores",
+        "/football-current-matches",
+        "/football-live-fixtures",
+        "/livematches",
     ]
     resultados = []
     for ep in endpoints:
         try:
             url = f"https://free-api-live-football-data.p.rapidapi.com{ep}"
             r = requests.get(url, headers=HEADERS, timeout=10)
-            resultados.append(f"✅ {ep} → {r.status_code}")
+            resultados.append(f"{'✅' if r.status_code == 200 else '⚠️'} {ep} → {r.status_code}")
         except Exception as e:
             resultados.append(f"❌ {ep} → erro")
     bot.reply_to(msg, "\n".join(resultados))
@@ -321,6 +323,7 @@ if __name__ == "__main__":
     print("🤖 ROBÔ OVER GOLS — API-Football via RapidAPI")
     threading.Thread(target=loop_continuo, daemon=True).start()
     bot.infinity_polling(timeout=30, long_polling_timeout=20)
+
 
 
 
